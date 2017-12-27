@@ -140,8 +140,7 @@ class WeatherSkill(MycroftSkill):
         self.owm = OWMApi()
 
     # Handle: what is the weather like?
-    @intent_handler(IntentBuilder("CurrentWeatherIntent").require(
-        "Weather").optionally("Location").build())
+    @intent_handler(IntentBuilder("CurrentWeatherIntent").require("Weather"))
     def handle_current_weather(self, message):
         try:
             # Get a date from requests like "weather for next Tuesday"
@@ -178,6 +177,16 @@ class WeatherSkill(MycroftSkill):
             self.__api_error(e)
         except Exception as e:
             LOG.error("Error: {0}".format(e))
+
+    # Separate handler for location to boost confidence using
+    # one_of('In', 'At')
+    @intent_handler(IntentBuilder("WeatherLocationIntent").require("Weather")
+            .one_of('In', 'At').require('Location'))
+    def handle_weather_location(self, message):
+        """
+            Handler for questions like what's the weather like in Berlin.
+        """
+        return self.handle_current_weather(message)
 
     # Handle: What is the weather forecast?
     @intent_handler(IntentBuilder("WeatherForecast").require(
