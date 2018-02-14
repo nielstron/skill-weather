@@ -21,7 +21,7 @@ from adapt.intent import IntentBuilder
 from multi_key_dict import multi_key_dict
 from mycroft.dialog import DialogLoader
 from mycroft.api import Api
-from mycroft.skills.core import MycroftSkill, intent_handler
+from mycroft.skills.core import MycroftSkill, intent_handler, intent_file_handler
 from mycroft.util.log import LOG
 from mycroft.util.parse import extract_datetime
 from mycroft.util.format import nice_number
@@ -54,6 +54,9 @@ class OWMApi(Api):
         self.observation = ObservationParser()
         self.forecast = ForecastParser()
 
+    def initialize(self):
+        self.register_entity_file('location.entity')
+        
     def build_query(self, params):
         params.get("query").update({"lang": self.lang})
         return params.get("query")
@@ -222,8 +225,7 @@ class WeatherSkill(MycroftSkill):
     # Handle: When will it rain again? | Will it rain on Tuesday?
     @intent_handler(IntentBuilder("NextPrecipitationIntent").require(
         "Next").require("Precipitation").optionally("Location").build())
-    @intent_handler(IntentBuilder("CurrentRainSnowIntent").require(
-        "Query").require("Precipitation").optionally("Location").build())
+    @intent_file_handler('current.rain.snow.intent')
     def handle_next_precipitation(self, message):
         report = self.__initialize_report(message)
 
@@ -464,6 +466,8 @@ class WeatherSkill(MycroftSkill):
         # is found return the default location instead.
         try:
             location = message.data.get("Location", None)
+            if location is None:
+                location = message.data.get("location", None)
             if location:
                 return None, None, location, location
 
