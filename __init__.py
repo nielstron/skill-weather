@@ -21,7 +21,7 @@ from adapt.intent import IntentBuilder
 from multi_key_dict import multi_key_dict
 from mycroft.dialog import DialogLoader
 from mycroft.api import Api
-from mycroft.skills.core import MycroftSkill, intent_handler
+from mycroft.skills.core import MycroftSkill, intent_handler, intent_file_handler
 from mycroft.util.log import LOG
 from mycroft.util.parse import extract_datetime
 from mycroft.util.format import nice_number
@@ -54,6 +54,9 @@ class OWMApi(Api):
         self.observation = ObservationParser()
         self.forecast = ForecastParser()
 
+    def initialize(self):
+        self.register_entity_file('location.entity')
+        
     def build_query(self, params):
         params.get("query").update({"lang": self.lang})
         return params.get("query")
@@ -140,8 +143,7 @@ class WeatherSkill(MycroftSkill):
         self.owm = OWMApi()
 
     # Handle: what is the weather like?
-    @intent_handler(IntentBuilder("CurrentWeatherIntent").require(
-        "Weather").optionally("Location").build())
+    @intent_file_handler('weather.intent')
     def handle_current_weather(self, message):
         try:
             # Get a date from requests like "weather for next Tuesday"
@@ -175,13 +177,12 @@ class WeatherSkill(MycroftSkill):
 
             self.__report_weather("current", report)
         except HTTPError as e:
-            self.__api_error(e)
+            self.speak_dialog('location.not.found', data={"location":report['location']})
         except Exception as e:
             LOG.error("Error: {0}".format(e))
 
     # Handle: What is the weather forecast?
-    @intent_handler(IntentBuilder("WeatherForecast").require(
-        "Forecast").optionally("Location").build())
+    @intent_file_handler('forecast.intent')
     def handle_forecast(self, message):
         try:
             report = self.__initialize_report(message)
@@ -215,15 +216,13 @@ class WeatherSkill(MycroftSkill):
 
             self.__report_weather("forecast", report)
         except HTTPError as e:
-            self.__api_error(e)
+            self.speak_dialog('location.not.found', data={"location":report['location']})
         except Exception as e:
             LOG.error("Error: {0}".format(e))
 
     # Handle: When will it rain again? | Will it rain on Tuesday?
-    @intent_handler(IntentBuilder("NextPrecipitationIntent").require(
-        "Next").require("Precipitation").optionally("Location").build())
-    @intent_handler(IntentBuilder("CurrentRainSnowIntent").require(
-        "Query").require("Precipitation").optionally("Location").build())
+    @intent_file_handler('next.precipitation.intent')
+    @intent_file_handler('current.precipitation.intent')
     def handle_next_precipitation(self, message):
         report = self.__initialize_report(message)
 
@@ -243,43 +242,48 @@ class WeatherSkill(MycroftSkill):
         }
         
         # search the forecast for precipitation
-        for weather in self.owm.daily_forecast(
-                report['full_location'],
-                report['lat'],
-                report['lon']).get_forecast().get_weathers():
+        try:
+            for weather in self.owm.daily_forecast(
+                    report['full_location'],
+                    report['lat'],
+                    report['lon']).get_forecast().get_weathers():
 
-            forecastDate = datetime.fromtimestamp(weather.get_reference_time())
-            
-            # TODO: "will it rain tomorrow" returns forecast for today, if it rains today
-            if when != today:
-                # User asked about a specific date, is this it?
-                whenGMT = self.__to_GMT(when)
-                if forecastDate.date() != whenGMT.date():
-                    continue
-
-            rain = weather.get_rain()
-            if rain and rain["all"] > 0:
-                data["precip"] = "rain"
-                data["day"] = self.__to_day(forecastDate)
-                if rain["all"] < 10:
-                    data["modifier"] = self.__translate("light")
-                elif rain["all"] > 20:
-                    data["modifier"] = self.__translate("heavy")
-
-                break
-
-            snow = weather.get_snow()
-            if snow and snow["all"] > 0:
-                data["precip"] = "snow"
-                data["day"] = self.__to_day(forecastDate)
-                if snow["all"] < 10:
-                    data["modifier"] = self.__translate("light")
-                elif snow["all"] > 20:
-                    data["modifier"] = self.__translate("heavy")
-
-                break
+                forecastDate = datetime.fromtimestamp(weather.get_reference_time())
                 
-        self.__report_precipitation(timeframe, data)
+                # TODO: "will it rain tomorrow" returns forecast for today, if it rains today
+                if when != today:
+                    # User asked about a specific date, is this it?
+                    whenGMT = self.__to_GMT(when)
+                    if forecastDate.date() != whenGMT.date():
+                        continue
+
+                rain = weather.get_rain()
+                if rain and rain["all"] > 0:
+                    data["precip"] = "rain"
+                    data["day"] = self.__to_day(forecastDate)
+                    if rain["all"] < 10:
+                        data["modifier"] = self.__translate("light")
+                    elif rain["all"] > 20:
+                        data["modifier"] = self.__translate("heavy")
+
+                    break
+
+                snow = weather.get_snow()
+                if snow and snow["all"] > 0:
+                    data["precip"] = "snow"
+                    data["day"] = self.__to_day(forecastDate)
+                    if snow["all"] < 10:
+                        data["modifier"] = self.__translate("light")
+                    elif snow["all"] > 20:
+                        data["modifier"] = self.__translate("heavy")
+
+                    break
+                
+            self.__report_precipitation(timeframe, data)
+        except HTTPError as e:
+            self.speak_dialog('location.not.found', data={"location":report['location']})
+        except Exception as e:
+            LOG.error("Error: {0}".format(e))
 
     # Handle: What's the weather later?
     @intent_handler(IntentBuilder("NextHoursWeatherIntent").require(
@@ -306,7 +310,7 @@ class WeatherSkill(MycroftSkill):
 
             self.__report_weather("hour", report)
         except HTTPError as e:
-            self.__api_error(e)
+            self.speak_dialog('location.not.found', data={"location":report['location']})
         except Exception as e:
             LOG.error("Error: {0}".format(e))
 
@@ -464,6 +468,8 @@ class WeatherSkill(MycroftSkill):
         # is found return the default location instead.
         try:
             location = message.data.get("Location", None)
+            if location is None:
+                location = message.data.get("location", None)
             if location:
                 return None, None, location, location
 

@@ -1,0 +1,8 @@
+is it (raining|snowing)
+does it (snow|rain)
+is there (rain|snow)
+is it (raining|snowing) (in|at) {location}
+does it (snow|rain) (in|at) {location}
+is there (rain|snow) (in|at) {location}
+should i wear (a coat|an umbrella)
+should i take an umbrella (with me|)
